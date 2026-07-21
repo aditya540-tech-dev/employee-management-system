@@ -17,6 +17,17 @@ app.use(cors({ origin: process.env.CLIENT_URL || "*", credentials: true }));
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+// On serverless platforms (Vercel), each cold start needs the DB connection
+// ready before handling a request — this middleware waits for it.
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    res.status(503).json({ message: "Database unavailable, please try again" });
+  }
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/employees", employeeRoutes);
 app.use("/api/attendance", attendanceRoutes);
@@ -37,10 +48,13 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-connectDB();
-
+// Only start a listening server when run directly (local dev / traditional hosting).
+// On Vercel, the platform imports `app` itself and handles requests via serverless functions.
+// (DB connection is handled per-request by the middleware above, which is safe for both cases.)
 if (require.main === module) {
-  app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  connectDB().then(() => {
+    app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+  });
 }
 
 module.exports = app;
